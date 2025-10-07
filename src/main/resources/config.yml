@@ -2,5 +2,19 @@
 # default: 300 (5 minutes)
 decay-time-seconds: 300
 # What block Crumblestone will display as (does not change behavior)
-# default: COARSE_DIRT
-material: COARSE_DIRT
+# default: ROOTED_DIRT
+material: ROOTED_DIRT
+# What materials can Crumblestone be crafted with
+ingredients:
+- DIRT
+- SAND
+- GRAVEL
+- CLAY
+- MUD
+- COARSE_DIRT
+- NETHERRACK
+- SOUL_SAND
+- SOUL_SOIL
+- COBBLESTONE
+- COBBLED_DEEPSLATE
+- BLACKSTONE
