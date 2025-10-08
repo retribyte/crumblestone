@@ -1,5 +1,6 @@
 package space.retri.minecraft.crumblestone;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -14,6 +15,10 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockDamageEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.block.BlockPistonEvent;
+import org.bukkit.event.block.BlockPistonExtendEvent;
+import org.bukkit.event.block.BlockPistonRetractEvent;
+import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.metadata.FixedMetadataValue;
@@ -59,7 +64,7 @@ public class CrumblestoneBlockListener implements Listener {
 
         placed.setMetadata(CrumblestonePlugin.META_KEY, new FixedMetadataValue(CrumblestonePlugin.getPlugin(), true));
 
-        long interval = CrumblestonePlugin.getDecayTicks() / 10; // ticks between stages for smooth animation
+        long interval = 300; //CrumblestonePlugin.getDecayTicks() / 10; // ticks between stages for smooth animation
 
         final int[] stage = {0};
 
@@ -90,10 +95,12 @@ public class CrumblestoneBlockListener implements Listener {
 
    @EventHandler
     public void onBlockBreak(BlockBreakEvent e) {
+        
         Block block = e.getBlock();
         String key = locKey(block.getLocation());
 
         if (scheduledRemoval.containsKey(key) || hasPluginMetadata(block)) {
+            // CrumblestonePlugin.getPlugin().getLogger().info("A crumblestone block was broken.");
             BukkitTask task = scheduledRemoval.remove(key);
             if (task != null) task.cancel();
 
@@ -114,6 +121,7 @@ public class CrumblestoneBlockListener implements Listener {
     public void onBlockDamage(BlockDamageEvent e) {
         Block block = e.getBlock();
         if (block.getType() == CrumblestonePlugin.getMaterial() && hasPluginMetadata(block)) {
+            // CrumblestonePlugin.getPlugin().getLogger().info("A crumblestone block is being damaged, preventing normal break.");
             // force instant break
             e.setInstaBreak(true);
         }
@@ -123,15 +131,59 @@ public class CrumblestoneBlockListener implements Listener {
     @EventHandler
     public void onEntityExplode(EntityExplodeEvent e) {
         for (Block b : e.blockList()) {
-            handleExternalBlockDestroy(b);
+            if (b.getType() == CrumblestonePlugin.getMaterial() && hasPluginMetadata(b)) {
+                // CrumblestonePlugin.getPlugin().getLogger().info("A crumblestone block is being exploded by an entity.");
+                resetCrackOverlay(b);
+                b.removeMetadata(CrumblestonePlugin.META_KEY, CrumblestonePlugin.getPlugin());
+
+                handleExternalBlockDestroy(b);
+                e.blockList().remove(b);
+                e.setYield(0f);
+            }
         }
     }
 
-    // block explosions 
     @EventHandler
-    public void onBlockExplode(BlockExplodeEvent e) {
-        for (Block b : e.blockList()) {
+    public void onEndermanMove(EntityChangeBlockEvent e) {
+        Block b = e.getBlock();
+        if (b.getType() == CrumblestonePlugin.getMaterial() && hasPluginMetadata(b)) {
+            // CrumblestonePlugin.getPlugin().getLogger().info("A crumblestone block is being moved by an enderman.");
+            playBlockBreakEffect(b);
+            b.setType(Material.AIR, false);
+            resetCrackOverlay(b);
+            b.removeMetadata(CrumblestonePlugin.META_KEY, CrumblestonePlugin.getPlugin());
+
             handleExternalBlockDestroy(b);
+            e.setCancelled(true);
+        }
+    }
+
+    // piston push
+    @EventHandler
+    public void onBlockPistonPush(BlockPistonExtendEvent e) {
+        onBlockPistonMove(e.getBlocks());
+    }
+
+    // piston pull
+    @EventHandler
+    public void onBlockPistonPull(BlockPistonRetractEvent e) {
+        if (!e.isSticky()) return; // only care about sticky pistons
+        onBlockPistonMove(e.getBlocks());
+    }
+
+    // generic piston event
+    public void onBlockPistonMove(List<Block> blocks) {
+        for (Block block : blocks) {
+            String key = locKey(block.getLocation());
+            if (scheduledRemoval.containsKey(key) || hasPluginMetadata(block)) {
+                // CrumblestonePlugin.getPlugin().getLogger().info("A crumblestone block is being moved by a piston.");
+                playBlockBreakEffect(block);
+                block.setType(Material.AIR, false);
+                resetCrackOverlay(block);
+                block.removeMetadata(CrumblestonePlugin.META_KEY, CrumblestonePlugin.getPlugin());
+                handleExternalBlockDestroy(block);
+                scheduledRemoval.remove(key);
+            }
         }
     }
 
@@ -150,7 +202,7 @@ public class CrumblestoneBlockListener implements Listener {
     private boolean hasPluginMetadata(Block block) {
         try {
             for (MetadataValue mv : block.getMetadata(CrumblestonePlugin.META_KEY)) {
-                if (Objects.equals(mv.getOwningPlugin(), this) && Boolean.TRUE.equals(mv.value())) {
+                if (Objects.equals(mv.getOwningPlugin(), CrumblestonePlugin.getPlugin()) && Boolean.TRUE.equals(mv.value())) {
                     return true;
                 }
             }
@@ -177,7 +229,7 @@ public class CrumblestoneBlockListener implements Listener {
         Location loc = block.getLocation();
         int fakeId = getOrCreateFakeEntityId(loc);
 
-        int viewDist = Bukkit.getViewDistance() * 16;
+        int viewDist = Bukkit.getSimulationDistance() * 16;
         int viewDistSq = viewDist * viewDist;
 
         for (var player : block.getWorld().getPlayers()) {
@@ -193,7 +245,7 @@ public class CrumblestoneBlockListener implements Listener {
         Integer fakeId = blockFakeEntityIds.get(key);
         if (fakeId == null) return;
 
-        int viewDist = Bukkit.getViewDistance() * 16;
+        int viewDist = Bukkit.getSimulationDistance() * 16;
         int viewDistSq = viewDist * viewDist;
 
         for (var player : block.getWorld().getPlayers()) {
