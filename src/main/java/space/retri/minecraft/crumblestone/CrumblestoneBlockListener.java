@@ -9,6 +9,8 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.entity.EntityType;
+import org.bukkit.entity.FallingBlock;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -142,10 +144,18 @@ public class CrumblestoneBlockListener implements Listener {
     }
 
     @EventHandler
-    public void onEndermanMove(EntityChangeBlockEvent e) {
+    public void onEntityUpdate(EntityChangeBlockEvent e) {
         Block b = e.getBlock();
+
+        // handle if material is set to a falling block e.g. sand, gravel
+        if (e.getEntityType().equals(EntityType.valueOf("FALLING_BLOCK"))) {
+            e.setCancelled(true);
+            // CrumblestonePlugin.getPlugin().getLogger().warning("A crumblestone block is trying to fall!");
+            return;
+        }
+
         if (b.getType() == CrumblestonePlugin.getMaterial() && hasPluginMetadata(b)) {
-            // CrumblestonePlugin.getPlugin().getLogger().info("A crumblestone block is being moved by an enderman.");
+            // CrumblestonePlugin.getPlugin().getLogger().info("A crumblestone block is being updated by an entity.");
             playBlockBreakEffect(b);
             b.setType(Material.AIR, false);
             resetCrackOverlay(b);
