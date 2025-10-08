@@ -1,6 +1,7 @@
 package space.retri.minecraft.crumblestone;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.ItemStack;
@@ -21,7 +22,7 @@ public class CrumblestonePlugin extends JavaPlugin {
 
     private static NamespacedKey itemKey;
     private static Plugin plugin;
-    private static CrumblestoneBlockListener listener = new CrumblestoneBlockListener();
+    private static CrumblestoneBlockListener listener;
 
     public static Plugin        getPlugin()     { return plugin; }
     public static long          getDecayTicks() { return DECAY_TICKS; }
@@ -44,14 +45,16 @@ public class CrumblestonePlugin extends JavaPlugin {
         try {
             BLOCK_MATERIAL = Material.valueOf(materialName.toUpperCase());
         } catch (IllegalArgumentException ex) {
-            getLogger().warning("Crumblestone: Invalid material in config: " + materialName + ". Using default material (ROOTED_DIRT).");
+            getLogger().warning("Invalid material in config: " + materialName + ". Using default material (ROOTED_DIRT).");
             BLOCK_MATERIAL = Material.ROOTED_DIRT;
         }
+
+        listener = new CrumblestoneBlockListener();
 
         registerRecipe();
         getServer().getPluginManager().registerEvents(listener, this);
 
-        getLogger().info("Crumblestone: Plugin enabled.\n\tDecay time: " + String.format("%.2f", decaySeconds) + "sec.\n\tMaterial: " + BLOCK_MATERIAL.toString() + "."); 
+        getLogger().info("Plugin enabled. Decay time: " + decaySeconds + "sec. Material: " + BLOCK_MATERIAL.toString() + "."); 
     }
 
     @Override
@@ -77,9 +80,9 @@ public class CrumblestonePlugin extends JavaPlugin {
             }
         }
         if (failCount > 0) 
-            getLogger().warning("Crumblestone: Failed to add " + failCount + " recipes.");
+            getLogger().warning("Failed to add " + failCount + " recipes.");
         else
-            getLogger().info("Crumblestone: Successfully added all recipes.");
+            getLogger().info("Successfully added " + recipes.size() + " recipes.");
     }
 
     private ItemStack createCrumblestoneItem() {
