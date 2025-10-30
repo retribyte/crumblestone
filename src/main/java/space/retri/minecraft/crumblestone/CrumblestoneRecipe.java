@@ -46,7 +46,7 @@ public class CrumblestoneRecipe {
                 recipe.setGroup("crumblestone");
 
                 recipes.add(recipe);
-                CrumblestonePlugin.getPlugin().getLogger().info("Added recipe: crumblestone_" + ingredients.get(i) + '_' + ingredients.get(j));
+                // CrumblestonePlugin.getPlugin().getLogger().info("Added recipe: crumblestone_" + ingredients.get(i) + '_' + ingredients.get(j));
             }
         }
         
