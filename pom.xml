@@ -6,11 +6,11 @@
 
     <groupId>space.retri.minecraft</groupId>
     <artifactId>crumblestone</artifactId>
-    <version>1.2.0</version>
+    <version>1.2.1</version>
     <packaging>jar</packaging>
 
     <name>Crumblestone</name>
-    <description>Adds Crumblestone (placeable Coarse Dirt that decays after 5 minutes) and a shapeless recipe.</description>
+    <description>Minecraft plugin that adds Crumblestone, a cheap temporary block.</description>
     <url>https://minecraft.retri.space</url>
 
     <properties>

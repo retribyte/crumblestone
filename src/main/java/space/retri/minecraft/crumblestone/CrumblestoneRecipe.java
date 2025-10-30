@@ -26,6 +26,12 @@ public class CrumblestoneRecipe {
                 if ((ingredients.get(i).equalsIgnoreCase("dirt") 
                     && ingredients.get(j).equalsIgnoreCase("gravel")))
                     continue;
+                
+                // blacklist using the crumblestone material in the crafting recipe
+                // should prevent infinite crumblestone
+                if (ingredients.get(i).equalsIgnoreCase(CrumblestonePlugin.getMaterial().toString())
+                    || ingredients.get(j).equalsIgnoreCase(CrumblestonePlugin.getMaterial().toString()))
+                    continue;
 
                 ShapedRecipe recipe = new ShapedRecipe(
                     new NamespacedKey(

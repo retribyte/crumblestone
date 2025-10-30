@@ -148,7 +148,7 @@ public class CrumblestoneBlockListener implements Listener {
         Block b = e.getBlock();
 
         // handle if material is set to a falling block e.g. sand, gravel
-        if (e.getEntityType().equals(EntityType.valueOf("FALLING_BLOCK"))) {
+        if (b.getType() == CrumblestonePlugin.getMaterial() && e.getEntityType().equals(EntityType.valueOf("FALLING_BLOCK"))) {
             e.setCancelled(true);
             // CrumblestonePlugin.getPlugin().getLogger().warning("A crumblestone block is trying to fall!");
             return;
