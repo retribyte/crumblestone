@@ -11,6 +11,20 @@ import org.bukkit.inventory.recipe.CraftingBookCategory;
 public class CrumblestoneRecipe {
     private static List<ShapedRecipe> recipes = new ArrayList<ShapedRecipe>();
 
+    // blacklisted recipes e.g. dirtxgravel = coarse dirt
+    private static final List<List<String>> BLACKLISTED_PAIRS = List.of(
+        List.of("DIRT", "GRAVEL")
+    );
+
+    private static boolean isBlacklisted(String a, String b) {
+        for (List<String> pair : BLACKLISTED_PAIRS) {
+            if ((pair.get(0).equalsIgnoreCase(a) && pair.get(1).equalsIgnoreCase(b))
+                || (pair.get(0).equalsIgnoreCase(b) && pair.get(1).equalsIgnoreCase(a)))
+                return true;
+        }
+        return false;
+    }
+
     public static List<ShapedRecipe> createRecipes(List<String> ingredients, ItemStack result) {
         result.setAmount(8);
         
@@ -20,11 +34,7 @@ public class CrumblestoneRecipe {
                 if (i == j)
                     continue;
 
-                // blacklisted recipes e.g. dirtxgravel = coarse dirt
-                // should probably check dynamically in the future
-                // if that is even possible
-                if ((ingredients.get(i).equalsIgnoreCase("dirt") 
-                    && ingredients.get(j).equalsIgnoreCase("gravel")))
+                if (isBlacklisted(ingredients.get(i), ingredients.get(j)))
                     continue;
                 
                 // blacklist using the crumblestone material in the crafting recipe
