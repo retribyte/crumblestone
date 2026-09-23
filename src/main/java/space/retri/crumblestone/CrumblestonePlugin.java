@@ -1,7 +1,6 @@
 package space.retri.crumblestone;
 
 import org.bukkit.Bukkit;
-import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.ItemStack;
@@ -9,6 +8,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
+
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -90,7 +90,7 @@ public class CrumblestonePlugin extends JavaPlugin {
         ItemMeta meta = item.getItemMeta();
         meta.displayName(Component.text("Crumblestone").decoration(TextDecoration.ITALIC, false));
         meta.lore(java.util.List.of(
-            Component.text("Decays after 5 minutes", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)
+            Component.text("Decays after " + String.format("%.1f", (double)getDecayTicks() / 1200) + " minutes", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)
         ));
         // mark thisd so we can identify it anywhere
         meta.getPersistentDataContainer().set(itemKey, PersistentDataType.BYTE, (byte)1);

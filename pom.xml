@@ -6,7 +6,7 @@
 
     <groupId>space.retri</groupId>
     <artifactId>crumblestone</artifactId>
-    <version>1.2.4</version>
+    <version>1.2.5</version>
     <packaging>jar</packaging>
 
     <name>Crumblestone</name>

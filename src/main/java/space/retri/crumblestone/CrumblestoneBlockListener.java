@@ -10,11 +10,12 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.EntityType;
-import org.bukkit.entity.FallingBlock;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockDamageEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.BlockPistonExtendEvent;
 import org.bukkit.event.block.BlockPistonRetractEvent;
@@ -29,14 +30,10 @@ import org.bukkit.scheduler.BukkitTask;
 public class CrumblestoneBlockListener implements Listener {
     // For generating unique fake entity IDs 
     private int nextFakeEntityId = -1;
-    // Map each block location to its fake entity ID
-    private final Map<String, Integer> blockFakeEntityIds = new ConcurrentHashMap<>();
-    // locationKey -> task
-    private final Map<String, BukkitTask> scheduledRemoval = new ConcurrentHashMap<>();
-    
-    private String locKey(Location loc) {
-        return loc.getWorld().getName() + ":" + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ();
-    }
+    // Map each block to its fake entity ID
+    private final Map<Block, Integer> blockFakeEntityIds = new ConcurrentHashMap<>();
+    // Block -> task
+    private final Map<Block, BukkitTask> scheduledRemoval = new ConcurrentHashMap<>();
 
     private boolean isCrumblestoneItem(ItemStack item) {
         if (item == null) return false;
@@ -46,17 +43,16 @@ public class CrumblestoneBlockListener implements Listener {
         return flag != null && flag == (byte)1;
     }
 
-    @EventHandler
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
     public void onBlockPlace(BlockPlaceEvent e) {
         ItemStack used = e.getItemInHand();
         if (!isCrumblestoneItem(used)) return;
 
         Block placed = e.getBlockPlaced();
-        Location loc = placed.getLocation();
-        String key = locKey(loc);
+        int placedTick = Bukkit.getCurrentTick();
 
         // Cancel any leftover task for this location
-        BukkitTask oldTask = scheduledRemoval.remove(key);
+        BukkitTask oldTask = scheduledRemoval.remove(placed);
         if (oldTask != null) oldTask.cancel();
 
         // Reset leftover overlay if needed
@@ -64,44 +60,44 @@ public class CrumblestoneBlockListener implements Listener {
 
         placed.setMetadata(CrumblestonePlugin.META_KEY, new FixedMetadataValue(CrumblestonePlugin.getPlugin(), true));
 
-        long interval = 300; //CrumblestonePlugin.getDecayTicks() / 10; // ticks between stages for smooth animation
-
-        final int[] stage = {0};
+        // must refresh often enough so client doesn't remove cracks
+        long interval = Math.max(1, Math.min(100, CrumblestonePlugin.getDecayTicks()));
 
         final BukkitTask[] taskHolder = new BukkitTask[1];
         taskHolder[0] = Bukkit.getScheduler().runTaskTimer(CrumblestonePlugin.getPlugin(), () -> {
-            if (placed.getType() != CrumblestonePlugin.getMaterial() || !hasPluginMetadata(placed)) {
+            if (!isCrumblestone(placed)) {
+                placed.removeMetadata(CrumblestonePlugin.META_KEY, CrumblestonePlugin.getPlugin());
+                resetCrackOverlay(placed);
+                scheduledRemoval.remove(placed);
+                taskHolder[0].cancel();
                 return;
             }
 
-            if (stage[0] < 10) {
-                float progress = stage[0] / 10.0f;
-                sendCrackProgress(placed, progress);
-                stage[0]++;
-            } else {
+            int elapsedTicks = Bukkit.getCurrentTick() - placedTick;
+            if (elapsedTicks >= CrumblestonePlugin.getDecayTicks()) {
                 // Final stage; decay the block
                 playBlockBreakEffect(placed);
                 placed.setType(Material.AIR, false);
                 resetCrackOverlay(placed);
-                scheduledRemoval.remove(key);
+                scheduledRemoval.remove(placed);
                 placed.removeMetadata(CrumblestonePlugin.META_KEY, CrumblestonePlugin.getPlugin());
                 // Cancel repeating task
                 taskHolder[0].cancel();
+            } else {
+                sendCrackProgress(placed, (elapsedTicks / (float)CrumblestonePlugin.getDecayTicks()));
             }
-        }, interval, interval);
+        }, 0, interval);
 
-        scheduledRemoval.put(key, taskHolder[0]);
+        scheduledRemoval.put(placed, taskHolder[0]);
     }
 
-   @EventHandler
+   @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
     public void onBlockBreak(BlockBreakEvent e) {
-        
         Block block = e.getBlock();
-        String key = locKey(block.getLocation());
 
-        if (scheduledRemoval.containsKey(key) || hasPluginMetadata(block)) {
+        if (isCrumblestone(block)) {
             // CrumblestonePlugin.getPlugin().getLogger().info("A crumblestone block was broken.");
-            BukkitTask task = scheduledRemoval.remove(key);
+            BukkitTask task = scheduledRemoval.remove(block);
             if (task != null) task.cancel();
 
             // no item drops
@@ -120,7 +116,7 @@ public class CrumblestoneBlockListener implements Listener {
     @EventHandler
     public void onBlockDamage(BlockDamageEvent e) {
         Block block = e.getBlock();
-        if (block.getType() == CrumblestonePlugin.getMaterial() && hasPluginMetadata(block)) {
+        if (isCrumblestone(block)) {
             // CrumblestonePlugin.getPlugin().getLogger().info("A crumblestone block is being damaged, preventing normal break.");
             // force instant break
             e.setInstaBreak(true);
@@ -128,38 +124,32 @@ public class CrumblestoneBlockListener implements Listener {
     }
 
     // entity explosions
-    @EventHandler
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
     public void onEntityExplode(EntityExplodeEvent e) {
-        for (Block b : e.blockList()) {
-            if (b.getType() == CrumblestonePlugin.getMaterial() && hasPluginMetadata(b)) {
-                // CrumblestonePlugin.getPlugin().getLogger().info("A crumblestone block is being exploded by an entity.");
-                resetCrackOverlay(b);
-                b.removeMetadata(CrumblestonePlugin.META_KEY, CrumblestonePlugin.getPlugin());
-
-                handleExternalBlockDestroy(b);
-                e.blockList().remove(b);
-                e.setYield(0f);
-            }
-        }
+        e.blockList().removeIf(this::destroyCrumblestoneInExplosion);
     }
 
-    @EventHandler
+    // block explosions (bed, respawn anchor)
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
+    public void onBlockExplode(BlockExplodeEvent e) {
+        e.blockList().removeIf(this::destroyCrumblestoneInExplosion);
+    }
+
+    @EventHandler(ignoreCancelled = true)
     public void onEntityUpdate(EntityChangeBlockEvent e) {
         Block b = e.getBlock();
 
         // handle if material is set to a falling block e.g. sand, gravel
-        if (b.getType() == CrumblestonePlugin.getMaterial() && e.getEntityType().equals(EntityType.valueOf("FALLING_BLOCK"))) {
+        if (isCrumblestone(b) && e.getEntityType().equals(EntityType.FALLING_BLOCK)) {
             e.setCancelled(true);
             // CrumblestonePlugin.getPlugin().getLogger().warning("A crumblestone block is trying to fall!");
             return;
         }
 
-        if (b.getType() == CrumblestonePlugin.getMaterial() && hasPluginMetadata(b)) {
+        if (isCrumblestone(b)) {
             // CrumblestonePlugin.getPlugin().getLogger().info("A crumblestone block is being updated by an entity.");
             playBlockBreakEffect(b);
             b.setType(Material.AIR, false);
-            resetCrackOverlay(b);
-            b.removeMetadata(CrumblestonePlugin.META_KEY, CrumblestonePlugin.getPlugin());
 
             handleExternalBlockDestroy(b);
             e.setCancelled(true);
@@ -167,43 +157,48 @@ public class CrumblestoneBlockListener implements Listener {
     }
 
     // piston push
-    @EventHandler
+    @EventHandler(ignoreCancelled = true)
     public void onBlockPistonPush(BlockPistonExtendEvent e) {
         onBlockPistonMove(e.getBlocks());
     }
 
     // piston pull
-    @EventHandler
+    @EventHandler(ignoreCancelled = true)
     public void onBlockPistonPull(BlockPistonRetractEvent e) {
         if (!e.isSticky()) return; // only care about sticky pistons
         onBlockPistonMove(e.getBlocks());
     }
 
+    private boolean destroyCrumblestoneInExplosion(Block b) {
+        // keep exploded blocks
+        if (!isCrumblestone(b))
+            return false;
+
+        // CrumblestonePlugin.getPlugin().getLogger().info("A crumblestone block is being exploded.");
+        playBlockBreakEffect(b);
+        b.setType(Material.AIR, false);   // destroy it ourselves, no drop
+        handleExternalBlockDestroy(b);    // cancels task, resets overlay, removes metadata
+        return true;
+    }
+
     // generic piston event
     public void onBlockPistonMove(List<Block> blocks) {
         for (Block block : blocks) {
-            String key = locKey(block.getLocation());
-            if (scheduledRemoval.containsKey(key) || hasPluginMetadata(block)) {
+            if (block.getType() == CrumblestonePlugin.getMaterial() && (scheduledRemoval.containsKey(block) || hasPluginMetadata(block))) {
                 // CrumblestonePlugin.getPlugin().getLogger().info("A crumblestone block is being moved by a piston.");
                 playBlockBreakEffect(block);
                 block.setType(Material.AIR, false);
-                resetCrackOverlay(block);
-                block.removeMetadata(CrumblestonePlugin.META_KEY, CrumblestonePlugin.getPlugin());
                 handleExternalBlockDestroy(block);
-                scheduledRemoval.remove(key);
             }
         }
     }
 
     private void handleExternalBlockDestroy(Block b) {
-        String key = locKey(b.getLocation());
-        if (scheduledRemoval.containsKey(key) || hasPluginMetadata(b)) {
-            BukkitTask t = scheduledRemoval.remove(key);
+        if (isCrumblestone(b)) {
+            BukkitTask t = scheduledRemoval.remove(b);
             if (t != null) t.cancel();
             resetCrackOverlay(b);
-            try {
-                b.removeMetadata(CrumblestonePlugin.META_KEY, CrumblestonePlugin.getPlugin());
-            } catch (Throwable ignored) {}
+            b.removeMetadata(CrumblestonePlugin.META_KEY, CrumblestonePlugin.getPlugin());
         }
     }
 
@@ -223,13 +218,11 @@ public class CrumblestoneBlockListener implements Listener {
     }
     
     private int getOrCreateFakeEntityId(Location loc) {
-        String key = locKey(loc);
-        return blockFakeEntityIds.computeIfAbsent(key, k -> nextFakeEntityId--);
+        return blockFakeEntityIds.computeIfAbsent(loc.getBlock(), k -> nextFakeEntityId--);
     }
 
     private void removeFakeEntityId(Location loc) {
-        String key = locKey(loc);
-        blockFakeEntityIds.remove(key);
+        blockFakeEntityIds.remove(loc.getBlock());
     }
 
     // Send crack overlay using fake entity ID
@@ -249,8 +242,7 @@ public class CrumblestoneBlockListener implements Listener {
 
     private void resetCrackOverlay(Block block) {
         Location loc = block.getLocation();
-        String key = locKey(loc);
-        Integer fakeId = blockFakeEntityIds.get(key);
+        Integer fakeId = blockFakeEntityIds.get(block);
         if (fakeId == null) return;
 
         int viewDist = Bukkit.getSimulationDistance() * 16;
@@ -267,9 +259,16 @@ public class CrumblestoneBlockListener implements Listener {
 
     public void clearScheduledRemovals() {
         // Cancel all scheduled tasks we created
-        for (BukkitTask task : scheduledRemoval.values()) {
-            if (task != null) task.cancel();
+        for (Map.Entry<Block, BukkitTask> pending : scheduledRemoval.entrySet()) {
+            pending.getValue().cancel();
+            // now we need to break all the blocks so they don't persist
+            pending.getKey().setType(Material.AIR, false);
+            resetCrackOverlay(pending.getKey());
         }
         scheduledRemoval.clear();
+    }
+
+    private boolean isCrumblestone(Block block) {
+        return block.getType() == CrumblestonePlugin.getMaterial() && hasPluginMetadata(block);
     }
 }
