@@ -1,8 +1,12 @@
 package space.retri.crumblestone;
 
+import java.util.Locale;
+
 import org.bukkit.Bukkit;
+import org.bukkit.Chunk;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.World;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
@@ -17,22 +21,26 @@ public class CrumblestonePlugin extends JavaPlugin {
 
     public static final String META_KEY = "crumblestone_placed";
     public static final String PDC_KEY = "crumblestone_item";
+    public static String NAMESPACE;
     private static long DECAY_TICKS = 5L * 60L * 20L;
     private static Material BLOCK_MATERIAL;
-
+    private static boolean UPDATE_ON_DECAY;
+    
     private static NamespacedKey itemKey;
     private static Plugin plugin;
     private static CrumblestoneBlockListener listener;
 
-    public static Plugin        getPlugin()     { return plugin; }
-    public static long          getDecayTicks() { return DECAY_TICKS; }
-    public static Material      getMaterial()   { return BLOCK_MATERIAL; }
-    public static NamespacedKey getItemKey()    { return itemKey; }
+    public static Plugin        getPlugin()         { return plugin; }
+    public static long          getDecayTicks()     { return DECAY_TICKS; }
+    public static Material      getMaterial()       { return BLOCK_MATERIAL; }
+    public static boolean       getUpdateOnDecay()  { return UPDATE_ON_DECAY; }
+    public static NamespacedKey getItemKey()        { return itemKey; }
 
     @Override
     public void onEnable() {
         plugin = this;
         CrumblestonePlugin.itemKey = new NamespacedKey(this, PDC_KEY);
+        NAMESPACE = this.getName().toLowerCase(Locale.ROOT);
 
         // Save default config if it doesn't exist
         saveDefaultConfig();
@@ -49,7 +57,16 @@ public class CrumblestonePlugin extends JavaPlugin {
             BLOCK_MATERIAL = Material.ROOTED_DIRT;
         }
 
+        UPDATE_ON_DECAY = getConfig().getBoolean("update-on-decay");
+
         listener = new CrumblestoneBlockListener();
+
+        // break remaining crumblestone blocks, to recover from sudden shutdown
+        for (World world : Bukkit.getWorlds()) {
+            for (Chunk chunk : world.getLoadedChunks()) {
+                listener.recoverChunk(chunk);
+            }
+        }
 
         registerRecipe();
         getServer().getPluginManager().registerEvents(listener, this);

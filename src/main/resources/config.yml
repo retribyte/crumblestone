@@ -4,6 +4,9 @@ decay-time-seconds: 300
 # What block Crumblestone will display as (does not change behavior)
 # default: ROOTED_DIRT
 material: ROOTED_DIRT
+# Whether to update blocks when Crumblestone decays
+# default: true
+update-on-decay: true
 # What materials can Crumblestone be crafted with
 ingredients:
 - DIRT

@@ -1,13 +1,16 @@
 package space.retri.crumblestone;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.block.Block;
 import org.bukkit.entity.EntityType;
 import org.bukkit.event.EventHandler;
@@ -21,6 +24,7 @@ import org.bukkit.event.block.BlockPistonExtendEvent;
 import org.bukkit.event.block.BlockPistonRetractEvent;
 import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.metadata.MetadataValue;
@@ -34,6 +38,10 @@ public class CrumblestoneBlockListener implements Listener {
     private final Map<Block, Integer> blockFakeEntityIds = new ConcurrentHashMap<>();
     // Block -> task
     private final Map<Block, BukkitTask> scheduledRemoval = new ConcurrentHashMap<>();
+
+    private NamespacedKey chunkKey(Block b) {
+        return new NamespacedKey(CrumblestonePlugin.getPlugin(), "block." + (b.getX() & 15) + "." + b.getY() + "." + (b.getZ() & 15));
+    }
 
     private boolean isCrumblestoneItem(ItemStack item) {
         if (item == null) return false;
@@ -58,15 +66,28 @@ public class CrumblestoneBlockListener implements Listener {
         // Reset leftover overlay if needed
         resetCrackOverlay(placed);
 
+        // set block metadata and persistent chunk info for that block / location
         placed.setMetadata(CrumblestonePlugin.META_KEY, new FixedMetadataValue(CrumblestonePlugin.getPlugin(), true));
+        placed.getChunk().getPersistentDataContainer()
+            .set(
+                chunkKey(placed), 
+                PersistentDataType.INTEGER_ARRAY,
+                new int[]{ placed.getX(), placed.getY(), placed.getZ() }
+            );
 
         // must refresh often enough so client doesn't remove cracks
         long interval = Math.max(1, Math.min(100, CrumblestonePlugin.getDecayTicks()));
 
+        // timer
         final BukkitTask[] taskHolder = new BukkitTask[1];
         taskHolder[0] = Bukkit.getScheduler().runTaskTimer(CrumblestonePlugin.getPlugin(), () -> {
+            // skip if the chunk is unloaded
+            if (!placed.getWorld().isChunkLoaded(placed.getX() >> 4, placed.getZ() >> 4)) {
+                return;
+            }
+
             if (!isCrumblestone(placed)) {
-                placed.removeMetadata(CrumblestonePlugin.META_KEY, CrumblestonePlugin.getPlugin());
+                removeMetadata(placed);
                 resetCrackOverlay(placed);
                 scheduledRemoval.remove(placed);
                 taskHolder[0].cancel();
@@ -77,10 +98,10 @@ public class CrumblestoneBlockListener implements Listener {
             if (elapsedTicks >= CrumblestonePlugin.getDecayTicks()) {
                 // Final stage; decay the block
                 playBlockBreakEffect(placed);
-                placed.setType(Material.AIR, false);
+                placed.setType(Material.AIR, CrumblestonePlugin.getUpdateOnDecay());
                 resetCrackOverlay(placed);
                 scheduledRemoval.remove(placed);
-                placed.removeMetadata(CrumblestonePlugin.META_KEY, CrumblestonePlugin.getPlugin());
+                removeMetadata(placed);
                 // Cancel repeating task
                 taskHolder[0].cancel();
             } else {
@@ -108,8 +129,7 @@ public class CrumblestoneBlockListener implements Listener {
             resetCrackOverlay(block);
 
             playBlockBreakEffect(block);
-
-            block.removeMetadata(CrumblestonePlugin.META_KEY, CrumblestonePlugin.getPlugin());
+            removeMetadata(block);
         }
     }
 
@@ -121,6 +141,11 @@ public class CrumblestoneBlockListener implements Listener {
             // force instant break
             e.setInstaBreak(true);
         }
+    }
+
+    @EventHandler
+    public void onChunkLoad(ChunkLoadEvent e) {
+        recoverChunk(e.getChunk());
     }
 
     // entity explosions
@@ -140,16 +165,16 @@ public class CrumblestoneBlockListener implements Listener {
         Block b = e.getBlock();
 
         // handle if material is set to a falling block e.g. sand, gravel
-        if (isCrumblestone(b) && e.getEntityType().equals(EntityType.FALLING_BLOCK)) {
-            e.setCancelled(true);
-            // CrumblestonePlugin.getPlugin().getLogger().warning("A crumblestone block is trying to fall!");
-            return;
-        }
-
-        if (isCrumblestone(b)) {
+        if (isCrumblestone(b)) { 
+            if (e.getEntityType().equals(EntityType.FALLING_BLOCK)) {
+                e.setCancelled(true);
+                // CrumblestonePlugin.getPlugin().getLogger().warning("A crumblestone block is trying to fall!");
+                return;
+            }
+            
             // CrumblestonePlugin.getPlugin().getLogger().info("A crumblestone block is being updated by an entity.");
             playBlockBreakEffect(b);
-            b.setType(Material.AIR, false);
+            b.setType(Material.AIR, true);
 
             handleExternalBlockDestroy(b);
             e.setCancelled(true);
@@ -176,7 +201,7 @@ public class CrumblestoneBlockListener implements Listener {
 
         // CrumblestonePlugin.getPlugin().getLogger().info("A crumblestone block is being exploded.");
         playBlockBreakEffect(b);
-        b.setType(Material.AIR, false);   // destroy it ourselves, no drop
+        b.setType(Material.AIR, true);   // destroy it ourselves, no drop
         handleExternalBlockDestroy(b);    // cancels task, resets overlay, removes metadata
         return true;
     }
@@ -184,7 +209,7 @@ public class CrumblestoneBlockListener implements Listener {
     // generic piston event
     public void onBlockPistonMove(List<Block> blocks) {
         for (Block block : blocks) {
-            if (block.getType() == CrumblestonePlugin.getMaterial() && (scheduledRemoval.containsKey(block) || hasPluginMetadata(block))) {
+            if (isCrumblestone(block)) {
                 // CrumblestonePlugin.getPlugin().getLogger().info("A crumblestone block is being moved by a piston.");
                 playBlockBreakEffect(block);
                 block.setType(Material.AIR, false);
@@ -194,11 +219,11 @@ public class CrumblestoneBlockListener implements Listener {
     }
 
     private void handleExternalBlockDestroy(Block b) {
-        if (isCrumblestone(b)) {
+        if (scheduledRemoval.containsKey(b) || hasPluginMetadata(b)) {
             BukkitTask t = scheduledRemoval.remove(b);
             if (t != null) t.cancel();
             resetCrackOverlay(b);
-            b.removeMetadata(CrumblestonePlugin.META_KEY, CrumblestonePlugin.getPlugin());
+            removeMetadata(b);
         }
     }
 
@@ -260,15 +285,46 @@ public class CrumblestoneBlockListener implements Listener {
     public void clearScheduledRemovals() {
         // Cancel all scheduled tasks we created
         for (Map.Entry<Block, BukkitTask> pending : scheduledRemoval.entrySet()) {
+            Block block = pending.getKey();
             pending.getValue().cancel();
+
             // now we need to break all the blocks so they don't persist
-            pending.getKey().setType(Material.AIR, false);
-            resetCrackOverlay(pending.getKey());
+            if (!block.getWorld().isChunkLoaded(block.getX() >> 4, block.getZ() >> 4)) {
+                continue;
+            }
+            block.setType(Material.AIR, CrumblestonePlugin.getUpdateOnDecay());
+            resetCrackOverlay(block);
+            removeMetadata(block);
         }
         scheduledRemoval.clear();
     }
 
+    private void removeMetadata(Block b) {
+        b.removeMetadata(CrumblestonePlugin.META_KEY, CrumblestonePlugin.getPlugin());
+        b.getChunk().getPersistentDataContainer().remove(chunkKey(b));
+    }
+
     private boolean isCrumblestone(Block block) {
         return block.getType() == CrumblestonePlugin.getMaterial() && hasPluginMetadata(block);
+    }
+
+    public void recoverChunk(Chunk chunk) {
+        for (NamespacedKey key : chunk.getPersistentDataContainer().getKeys()) {
+            if (!key.getNamespace().equals(CrumblestonePlugin.NAMESPACE) 
+                || !key.getKey().startsWith("block.")) {
+                continue;
+            }
+
+            int[] coords = chunk.getPersistentDataContainer().get(key, PersistentDataType.INTEGER_ARRAY);
+            Block block = chunk.getWorld().getBlockAt(coords[0], coords[1], coords[2]);
+            if (block.getType() == CrumblestonePlugin.getMaterial()) {
+                playBlockBreakEffect(block);
+                block.setType(Material.AIR, false);
+            }
+
+            if (!scheduledRemoval.containsKey(block)) {
+                chunk.getPersistentDataContainer().remove(key);
+            }
+        }
     }
 }
