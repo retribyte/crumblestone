@@ -39,6 +39,9 @@ public class CrumblestoneBlockListener implements Listener {
     // Block -> task
     private final Map<Block, BukkitTask> scheduledRemoval = new ConcurrentHashMap<>();
 
+    // initial no-cracks + 10 crack textures
+    private static final int VISUAL_STAGES = 11;
+
     private NamespacedKey chunkKey(Block b) {
         return new NamespacedKey(CrumblestonePlugin.getPlugin(), "block." + (b.getX() & 15) + "." + b.getY() + "." + (b.getZ() & 15));
     }
@@ -105,7 +108,7 @@ public class CrumblestoneBlockListener implements Listener {
                 // Cancel repeating task
                 taskHolder[0].cancel();
             } else {
-                sendCrackProgress(placed, (elapsedTicks / (float)CrumblestonePlugin.getDecayTicks()));
+                sendCrackProgress(placed, crackProgress(elapsedTicks));
             }
         }, 0, interval);
 
@@ -248,6 +251,15 @@ public class CrumblestoneBlockListener implements Listener {
 
     private void removeFakeEntityId(Location loc) {
         blockFakeEntityIds.remove(loc.getBlock());
+    }
+    
+    private float crackProgress(long elapsedTicks) {
+        int stage = (int)(elapsedTicks * VISUAL_STAGES / CrumblestonePlugin.getDecayTicks()) - 1;
+        if (stage < 0) {
+            return 0;
+        }
+        // add 0.5 to avoid rounding down a stage
+        return Math.min(1f, (stage + 0.5f) / 9f);
     }
 
     // Send crack overlay using fake entity ID

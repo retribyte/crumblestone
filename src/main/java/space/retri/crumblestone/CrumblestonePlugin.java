@@ -1,5 +1,7 @@
 package space.retri.crumblestone;
 
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.util.Locale;
 
 import org.bukkit.Bukkit;
@@ -107,8 +109,11 @@ public class CrumblestonePlugin extends JavaPlugin {
         ItemMeta meta = item.getItemMeta();
         meta.displayName(Component.text("Crumblestone").decoration(TextDecoration.ITALIC, false));
         meta.lore(java.util.List.of(
-            Component.text("Decays after " + String.format("%.1f", (double)getDecayTicks() / 1200) + " minutes", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)
-        ));
+                Component.text("Decays after "
+                            + new DecimalFormat("0.#", DecimalFormatSymbols.getInstance(Locale.ROOT))
+                                    .format((double) getDecayTicks() / 1200)
+                            + (getDecayTicks() == 1200 ? " minute" : " minutes"), NamedTextColor.GRAY)
+                    .decoration(TextDecoration.ITALIC, false)));
         // mark thisd so we can identify it anywhere
         meta.getPersistentDataContainer().set(itemKey, PersistentDataType.BYTE, (byte)1);
         item.setItemMeta(meta);
