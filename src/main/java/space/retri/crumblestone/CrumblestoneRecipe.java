@@ -1,4 +1,4 @@
-package space.retri.minecraft.crumblestone;
+package space.retri.crumblestone;
 
 import java.util.ArrayList;
 import java.util.List;

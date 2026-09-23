@@ -1,6 +1,6 @@
 name: Crumblestone
-main: space.retri.minecraft.crumblestone.CrumblestonePlugin
-version: 1.2.3
+main: space.retri.crumblestone.CrumblestonePlugin
+version: '${version}'
 api-version: 1.21
 description: Adds Crumblestone, a cheap temporary block that decays over time.
 author: Retribyte

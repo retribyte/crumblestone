@@ -1,4 +1,4 @@
-package space.retri.minecraft.crumblestone;
+package space.retri.crumblestone;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
