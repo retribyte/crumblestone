@@ -1,7 +1,6 @@
 package space.retri.crumblestone;
 
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -11,7 +10,12 @@ import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.SoundCategory;
+import org.bukkit.SoundGroup;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.block.Container;
+import org.bukkit.block.data.Directional;
 import org.bukkit.entity.EntityType;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -19,17 +23,20 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockDamageEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
-import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.BlockPistonExtendEvent;
 import org.bukkit.event.block.BlockPistonRetractEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
+import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.metadata.MetadataValue;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitTask;
+
+import io.papermc.paper.event.block.BlockPreDispenseEvent;
 
 public class CrumblestoneBlockListener implements Listener {
     // For generating unique fake entity IDs 
@@ -59,7 +66,27 @@ public class CrumblestoneBlockListener implements Listener {
         ItemStack used = e.getItemInHand();
         if (!isCrumblestoneItem(used)) return;
 
-        Block placed = e.getBlockPlaced();
+        trackCrumblestone(e.getBlockPlaced());
+    }
+
+    // Place crumblestone without requiring a player
+    public void placeCrumblestone(Block block) {
+        block.setType(CrumblestonePlugin.getMaterial(), true);
+
+        SoundGroup sounds = block.getBlockSoundGroup();
+        block.getWorld().playSound(
+            block.getLocation().toCenterLocation(),
+            sounds.getPlaceSound(),
+            SoundCategory.BLOCKS, 
+            (sounds.getVolume() + 1.0f) / 2.0f,
+            sounds.getPitch() * 0.8f
+        );
+
+        trackCrumblestone(block);
+    }
+
+    // Mark a block as crumblestone, start its decay
+    private void trackCrumblestone(Block placed) {
         int placedTick = Bukkit.getCurrentTick();
 
         // Cancel any leftover task for this location
@@ -217,6 +244,36 @@ public class CrumblestoneBlockListener implements Listener {
                 playBlockBreakEffect(block);
                 block.setType(Material.AIR, false);
                 handleExternalBlockDestroy(block);
+            }
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
+    public void onDispenserPlace(BlockPreDispenseEvent e) {
+        if (!isCrumblestoneItem(e.getItemStack()) || e.getBlock().getType() == Material.DROPPER)
+            return;
+
+        // CrumblestonePlugin.getPlugin().getLogger().info("A BlockPreDispenseEvent was triggered.");
+
+        if (e.getBlock().getBlockData() instanceof Directional) {
+            // it should be
+            BlockFace face = ((Directional) e.getBlock().getBlockData()).getFacing();
+            Block block = e.getBlock().getRelative(face);
+
+            if (block.isReplaceable()) {
+                e.setCancelled(true);
+                
+                Inventory inv = ((Container) e.getBlock().getState()).getInventory();
+                inv.setItem(e.getSlot(), inv.getItem(e.getSlot()).subtract());
+
+                placeCrumblestone(block);
+                // CrumblestonePlugin.getPlugin().getLogger().info("Crumblestone was dispensed at (" + block.getX() + ", " + block.getY() + ", " + block.getZ() + ").");
+            } else {
+                e.setCancelled(true);
+
+                block.getWorld().playEffect(block.getLocation(), org.bukkit.Effect.CLICK1, null);
+                block.getWorld().playEffect(e.getBlock().getLocation(), org.bukkit.Effect.SMOKE, face);
+                // CrumblestonePlugin.getPlugin().getLogger().info("Crumblestone failed to dispense at (" + block.getX() + ", " + block.getY() + ", " + block.getZ() + ").");
             }
         }
     }
